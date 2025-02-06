@@ -1,4 +1,4 @@
 ezprompt.egg-info/*
-ezlogs/*
+*ezlogs*
 *__pycache__*
 *.DS_Store

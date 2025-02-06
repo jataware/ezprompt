@@ -5,8 +5,9 @@ from tqdm.asyncio import tqdm as atqdm
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+from rich.pretty import Pretty
 
-def log(LOG_DIR, name, counter, prompt, output_str, output, max_chars=1024):
+def log(LOG_DIR, name, counter, prompt, output_str, output):
     assert LOG_DIR is not None, "LOG_DIR must be set"
     
     console  = Console(record=True)
@@ -16,15 +17,11 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, max_chars=1024):
     prompt_panel = Panel(prompt, title=f"{name.upper()} - {counter:04d} - INPUT", border_style="blue")
     
     # Format raw output
-    output_str_panel = Panel(output_str[:max_chars], title=f"{name.upper()} - {counter:04d} - OUTPUT - RAW", border_style="yellow")
+    output_str_panel = Panel(output_str, title=f"{name.upper()} - {counter:04d} - OUTPUT - RAW", border_style="yellow")
     
     # Format response
-    output_text = Text()
-    for k,v in output.items():
-        output_text.append(f"## {k}\n", style="bold magenta")
-        output_text.append(f"{v}\n\n")
-    
-    response_panel = Panel(output_text[:max_chars], title=f"{name.upper()} - {counter:04d} - OUTPUT - FMT", border_style="green")
+    output_text    = Pretty(output)
+    response_panel = Panel(output_text, title=f"{name.upper()} - {counter:04d} - OUTPUT - FMT", border_style="green")
     
     console.print(prompt_panel, output_str_panel, response_panel)
     
@@ -33,7 +30,7 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, max_chars=1024):
         f.write(console.export_text())
 
 
-async def arun_batch(prompts, max_concurrent=5):
+async def arun_batch(prompts, max_concurrent=5, show_progress=True):
     results = {}
     sem = asyncio.Semaphore(max_concurrent)
     
@@ -47,7 +44,7 @@ async def arun_batch(prompts, max_concurrent=5):
     
     tasks = [_process_prompt(qid, prompt_fn) for qid, prompt_fn in prompts.items()]
     
-    pbar = atqdm(total=len(prompts), desc="arun_batch")
+    pbar = atqdm(total=len(prompts), desc="arun_batch", disable=not show_progress)
     for coro in asyncio.as_completed(tasks):
         qid, result = await coro
         results[qid] = result
