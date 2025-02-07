@@ -3,12 +3,26 @@
     ezprompt.py
 """
 
+import json
+from hashlib import md5
+from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Callable
-
 from litellm import completion, acompletion
 
 from . import utils
+
+
+def _cache_key(*args):
+    h = ''
+    for x in args:
+        if isinstance(x, dict):
+            h += md5(json.dumps(x, sort_keys=True).encode()).hexdigest()
+        else:
+            h += md5(str(x).encode()).hexdigest()
+    
+    return md5(h.encode()).hexdigest()
+
 
 # --
 # Main
@@ -32,7 +46,8 @@ class EZPrompt:
             before:Optional[Callable]=None, 
             after:Optional[Callable]=None, 
             response_format:Optional[BaseModel]=None,
-            llm_kwargs:dict
+            llm_kwargs:dict,
+            cache_dir:Optional[str]=None
         ):
         self.name            = name
         self.counter         = 0
@@ -42,6 +57,11 @@ class EZPrompt:
         self.before          = before
         self.after           = after
         self.llm_kwargs      = llm_kwargs
+        
+        self.cache_dir = None
+        if cache_dir is not None:
+            self.cache_dir = Path(cache_dir) / self.name
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
     
     def prompt(self, **inputs):
         # [TODO] not DRY?
@@ -58,6 +78,14 @@ class EZPrompt:
     
     def run(self, **inputs):
         prompt, extra_kwargs = self.prompt(**inputs)
+
+        # Check cache
+        if self.cache_dir is not None:
+            cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            if cache_path.exists():
+                return json.loads(cache_path.read_text())
+        
         
         response = completion(
             **self.llm_kwargs,
@@ -83,11 +111,23 @@ class EZPrompt:
         
         self.counter += 1
         
+        
+        if self.cache_dir is not None:
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            cache_path.write_text(json.dumps(output))
+        
+        
         return output
 
     async def arun(self, **inputs):
         # [TODO] very annoying that i have to repeat the whole thing? can i do a synchronous wrapper?
         prompt, extra_kwargs = self.prompt(**inputs)
+
+        if self.cache_dir is not None:
+            cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            if cache_path.exists():
+                return json.loads(cache_path.read_text())
         
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
         response = await acompletion(
@@ -114,6 +154,10 @@ class EZPrompt:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
         
         self.counter += 1
+        
+        if self.cache_dir is not None:
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            cache_path.write_text(json.dumps(output))
         
         return output
     
