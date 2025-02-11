@@ -47,7 +47,8 @@ class EZPrompt:
             after:Optional[Callable]=None, 
             response_format:Optional[BaseModel]=None,
             llm_kwargs:dict,
-            cache_dir:Optional[str]=None
+            cache_dir:Optional[str]=None,
+            no_log:bool=False
         ):
         self.name            = name
         self.counter         = 0
@@ -57,6 +58,7 @@ class EZPrompt:
         self.before          = before
         self.after           = after
         self.llm_kwargs      = llm_kwargs
+        self.do_log          = not no_log
         
         self.cache_dir = None
         if cache_dir is not None:
@@ -110,7 +112,7 @@ class EZPrompt:
             cache_path.write_text(json.dumps(output))
 
         assert isinstance(output, dict)
-        if self.LOG_DIR is not None:
+        if self.do_log and self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
         
         self.counter += 1        
@@ -152,7 +154,7 @@ class EZPrompt:
             cache_path.write_text(json.dumps(output))
         
         assert isinstance(output, dict)
-        if self.LOG_DIR is not None:
+        if self.do_log and self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
         
         self.counter += 1
