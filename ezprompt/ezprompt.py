@@ -104,18 +104,16 @@ class EZPrompt:
         
         if self.after is not None:
             output = self.after(**output, **extra_kwargs)
-        
+
+        if self.cache_dir is not None:
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            cache_path.write_text(json.dumps(output))
+
         assert isinstance(output, dict)
         if self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
         
-        self.counter += 1
-        
-        
-        if self.cache_dir is not None:
-            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
-            cache_path.write_text(json.dumps(output))
-        
+        self.counter += 1        
         
         return output
 
@@ -149,16 +147,16 @@ class EZPrompt:
         if self.after is not None:
             output = self.after(**output, **extra_kwargs)
         
+        if self.cache_dir is not None:
+            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
+            cache_path.write_text(json.dumps(output))
+        
         assert isinstance(output, dict)
         if self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
         
         self.counter += 1
-        
-        if self.cache_dir is not None:
-            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
-            cache_path.write_text(json.dumps(output))
-        
+                
         return output
     
     def larun(self, **inputs):
