@@ -48,7 +48,8 @@ class EZPrompt:
             response_format:Optional[BaseModel]=None,
             llm_kwargs:dict,
             cache_dir:Optional[str]=None,
-            no_log:bool=False
+            no_log:bool=False,
+            no_console:bool=False
         ):
         self.name            = name
         self.counter         = 0
@@ -59,6 +60,7 @@ class EZPrompt:
         self.after           = after
         self.llm_kwargs      = llm_kwargs
         self.do_log          = not no_log
+        self.do_console      = not no_console
         
         self.cache_dir = None
         if cache_dir is not None:
@@ -113,9 +115,9 @@ class EZPrompt:
 
         assert isinstance(output, dict)
         if self.do_log and self.LOG_DIR is not None:
-            utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
+            utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output, show_console=self.do_console)
         
-        self.counter += 1        
+        self.counter += 1
         
         return output
 
@@ -155,7 +157,7 @@ class EZPrompt:
         
         assert isinstance(output, dict)
         if self.do_log and self.LOG_DIR is not None:
-            utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output)
+            utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output, show_console=self.do_console)
         
         self.counter += 1
                 
