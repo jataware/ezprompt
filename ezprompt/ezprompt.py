@@ -90,15 +90,15 @@ class EZPrompt:
             if cache_path.exists():
                 return json.loads(cache_path.read_text())
         
-        
-        response = completion(
-            **self.llm_kwargs,
-            response_format = self.response_format,
-            messages        = [
-                {"role": "system", "content": self.system},
-                {"role": "user",   "content": prompt}
-            ]
-        )
+        with utils.spinner(f"Running {self.name}"):
+            response = completion(
+                **self.llm_kwargs,
+                response_format = self.response_format,
+                messages        = [
+                    {"role": "system", "content": self.system},
+                    {"role": "user",   "content": prompt}
+                ]
+            )
         
         output_str = response.choices[0].message.content
         if self.response_format is not None:

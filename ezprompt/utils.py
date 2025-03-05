@@ -1,12 +1,39 @@
 import json
 import asyncio
 from pathlib import Path
+from tqdm import tqdm
 from tqdm.asyncio import tqdm as atqdm
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.pretty import Pretty
+from rich.live import Live
+from rich.spinner import Spinner
+import time
+
+def spinner(msg, spinner_type="aesthetic"):
+    start_time = time.time()
+    console = Console()
+    
+    def get_spinner_text():
+        elapsed = int(time.time() - start_time)
+        return f"{msg} (elapsed: {elapsed}s)"
+    
+    spinner_obj = Spinner(spinner_type, text=get_spinner_text())
+    
+    # Create Live display with the spinner
+    live = Live(spinner_obj, console=console, refresh_per_second=16)
+    
+    # Override the get_renderable method to update the elapsed time
+    original_get_renderable = live.get_renderable
+    def get_renderable():
+        spinner_obj.text = get_spinner_text()
+        return original_get_renderable()
+    
+    live.get_renderable = get_renderable
+    
+    return live
 
 def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
     # assert LOG_DIR is not None, "LOG_DIR must be set"
