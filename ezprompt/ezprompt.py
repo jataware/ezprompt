@@ -93,6 +93,7 @@ class EZPrompt:
         with utils.spinner(f"Running {self.name}"):
             response = completion(
                 **self.llm_kwargs,
+                num_retries     = 3,
                 response_format = self.response_format,
                 messages        = [
                     {"role": "system", "content": self.system},
@@ -134,6 +135,7 @@ class EZPrompt:
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
         response = await acompletion(
             **self.llm_kwargs,
+            num_retries     = 3,
             response_format = self.response_format,
             messages        = [
                 {"role": "system", "content": self.system},

@@ -40,7 +40,7 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
     
     log_path_txt  = Path(LOG_DIR) / f'{name}-{counter:04d}.txt'
     log_path_json = Path(LOG_DIR) / f'{name}-{counter:04d}.json'
-
+    
     with open(log_path_json, 'w') as f:
         json.dump({
             "prompt"     : prompt,
@@ -68,12 +68,46 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
             f.write(console.export_text())
 
 
-async def arun_batch(prompts, max_concurrent=5, show_progress=True):
+# --
+
+class RateLimiter:
+    def __init__(self, max_calls, period):
+        self.max_calls = max_calls
+        self.period = period  # period in seconds (e.g., 60 seconds)
+        self.calls = 0
+        self.reset_time = time.monotonic() + period
+        self.lock = asyncio.Lock()
+    
+    async def __aenter__(self):
+        async with self.lock:
+            now = time.monotonic()
+            if now >= self.reset_time:
+                # Reset the counter and window
+                self.calls = 0
+                self.reset_time = now + self.period
+            if self.calls >= self.max_calls:
+                # Delay until the start of the next period
+                sleep_time = self.reset_time - now
+                print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.")
+                await asyncio.sleep(sleep_time)
+                self.calls = 0
+                self.reset_time = time.monotonic() + self.period
+            self.calls += 1
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+
+async def arun_batch(prompts, max_calls=9999, period=60, show_progress=True):
     results = {}
-    sem = asyncio.Semaphore(max_concurrent)
+    
+    rate_limiter = RateLimiter(max_calls=max_calls, period=period)
     
     async def _process_prompt(qid, prompt_fn):
-        async with sem:
+        async with rate_limiter:
+            print(f"processing: {qid}")
             try:
                 result = await prompt_fn()
                 return qid, result
@@ -95,3 +129,4 @@ async def arun_batch(prompts, max_concurrent=5, show_progress=True):
 
 def run_batch(*args, **kwargs):
     return asyncio.run(arun_batch(*args, **kwargs))
+
