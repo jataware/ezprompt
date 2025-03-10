@@ -140,5 +140,11 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=
 
 
 def run_batch(*args, **kwargs):
-    return asyncio.run(arun_batch(*args, **kwargs))
+    # Create a new event loop each time
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(arun_batch(*args, **kwargs))
+    finally:
+        loop.close()
 
