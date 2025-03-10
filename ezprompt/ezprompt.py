@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Callable
 from litellm import completion, acompletion
+from rich import print as rprint
 
 from . import utils
 
@@ -92,7 +93,10 @@ class EZPrompt:
             
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
+                rprint(f"[green]ezprompt: Loaded from cache[/green] {cache_key}")
                 return json.loads(cache_path.read_text())
+            else:
+                rprint(f"[blue]ezprompt: No cache found[/blue] {cache_key}")
         
         with utils.spinner(f"Running {self.name}"):
             response = completion(
@@ -138,7 +142,10 @@ class EZPrompt:
             
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
+                rprint(f"[green]ezprompt: Loaded from cache[/green] {cache_key}")
                 return json.loads(cache_path.read_text())
+            else:
+                rprint(f"[blue]ezprompt: No cache found[/blue] {cache_key}")
         
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
         response = await acompletion(

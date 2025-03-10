@@ -35,11 +35,10 @@ def spinner(msg, spinner_type="aesthetic"):
     return live
 
 def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
-    # assert LOG_DIR is not None, "LOG_DIR must be set"
     
-    log_path_txt  = Path(LOG_DIR) / f'{name}-{counter:04d}.txt'
-    log_path_json = Path(LOG_DIR) / f'{name}-{counter:04d}.json'
-    
+    # JSON
+    log_path_json = Path(LOG_DIR) / name / f'{name}-{counter:04d}.json'
+    log_path_json.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path_json, 'w') as f:
         json.dump({
             "prompt"     : prompt,
@@ -47,6 +46,7 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
             "output"     : output,
         }, f)
     
+    # TXT
     if show_console:
         console = Console(record=True)
         
@@ -63,6 +63,8 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
         console.print(prompt_panel, output_str_panel, response_panel)
         
         # Save to file
+        log_path_txt  = Path(LOG_DIR) / name / f'{name}-{counter:04d}.txt'
+        log_path_txt.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path_txt, 'w') as f:
             f.write(console.export_text())
 
