@@ -1,3 +1,4 @@
+import sys
 import json
 import asyncio
 from pathlib import Path
@@ -93,7 +94,7 @@ class RateLimiter:
                 expire_time = oldest + self.period
                 # Sleep until we can make another call
                 sleep_time = expire_time - now
-                print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.")
+                print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.", file=sys.stderr)
                 await asyncio.sleep(sleep_time)
                 
                 # After sleeping, recalculate the submission times list
@@ -118,16 +119,16 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=
     async def _process_prompt(qid, prompt_fn):
         await asyncio.sleep(np.random.exponential(delay))
         async with rate_limiter:
-            print(f"preparing : {qid:03d}")
+            print(f"preparing : {qid:03d}", file=sys.stderr)
             try:
                 await asyncio.sleep(np.random.exponential(delay))
-                print(f"running   : {qid:03d}")
+                print(f"running   : {qid:03d}", file=sys.stderr)
                 result = await prompt_fn()
-                print(f"complete  : {qid:03d}")
+                print(f"complete  : {qid:03d}", file=sys.stderr)
                 return qid, result
             except Exception as e:
                 breakpoint()
-                print(f"Error processing prompt {qid}: {e}")
+                print(f"Error processing prompt {qid}: {e}", file=sys.stderr)
                 return qid, None
     
     tasks = [_process_prompt(qid, prompt_fn) for qid, prompt_fn in prompts.items()]
