@@ -126,6 +126,7 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=
                 print(f"complete  : {qid:03d}")
                 return qid, result
             except Exception as e:
+                breakpoint()
                 print(f"Error processing prompt {qid}: {e}")
                 return qid, None
     

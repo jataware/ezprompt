@@ -82,9 +82,10 @@ class EZPrompt:
         return prompt, extra_kwargs
     
     def run(self, _cache_idx=None, **inputs):
+        # Format prompt
         prompt, extra_kwargs = self.prompt(**inputs)
 
-        # Check cache
+        # Read cache (?)
         if self.cache_dir is not None:
             if _cache_idx is None:
                 cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
@@ -98,6 +99,7 @@ class EZPrompt:
             else:
                 rprint(f"[blue]ezprompt: No cache found[/blue] {cache_key}")
         
+        # Run LLM
         with utils.spinner(f"Running {self.name}"):
             response = completion(
                 **self.llm_kwargs,
@@ -109,19 +111,30 @@ class EZPrompt:
                 ]
             )
         
+        # [BUG] Why would this happen?
+        if len(response.choices) == 0:
+            rprint(f"[red]ezprompt: No response from {self.name}[/red] {prompt}")
+            rprint(response)
+            raise Exception(f"No response from {self.name}")
+        
         output_str = response.choices[0].message.content
+        
+        # Structured output
         if self.response_format is not None:
             output = self.response_format.model_validate_json(output_str).model_dump()
         else:
             output = {"output_str" : output_str}
         
+        # Post-processing
         if self.after is not None:
             output = self.after(**output, **extra_kwargs)
 
+        # Write cache
         if self.cache_dir is not None:
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             cache_path.write_text(json.dumps(output))
 
+        # Logging
         assert isinstance(output, dict)
         if self.do_log and self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output, show_console=self.do_console)
@@ -131,9 +144,10 @@ class EZPrompt:
         return output
 
     async def arun(self, _cache_idx=None, **inputs):
-        # [TODO] very annoying that i have to repeat the whole thing? can i do a synchronous wrapper?
+        # Format prompt
         prompt, extra_kwargs = self.prompt(**inputs)
 
+        # Read cache (?)
         if self.cache_dir is not None:
             if _cache_idx is None:
                 cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
@@ -147,6 +161,7 @@ class EZPrompt:
             else:
                 rprint(f"[blue]ezprompt: No cache found[/blue] {cache_key}")
         
+        # Run LLM
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
         response = await acompletion(
             **self.llm_kwargs,
@@ -159,19 +174,30 @@ class EZPrompt:
         )
         # ^^^^^^ ONLY DIFFERENCE FROM SYNC VERSION ^^^^^^
         
+        # [BUG] Why would this happen?
+        if len(response.choices) == 0:
+            rprint(f"[red]ezprompt: No response from {self.name}[/red] {prompt}")
+            rprint(response)
+            raise Exception(f"No response from {self.name}")
+        
         output_str = response.choices[0].message.content
+        
+        # Structured output
         if self.response_format is not None:
             output = self.response_format.model_validate_json(output_str).model_dump()
         else:
             output = {"output_str" : output_str}
         
+        # Post-processing
         if self.after is not None:
             output = self.after(**output, **extra_kwargs)
         
+        # Write cache
         if self.cache_dir is not None:
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             cache_path.write_text(json.dumps(output))
         
+        # Logging
         assert isinstance(output, dict)
         if self.do_log and self.LOG_DIR is not None:
             utils.log(self.LOG_DIR, self.name, self.counter, prompt, output_str, output, show_console=self.do_console)
