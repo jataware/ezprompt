@@ -1,12 +1,11 @@
 import json
 import asyncio
 from pathlib import Path
-from tqdm import tqdm
+import numpy as np
 from tqdm.asyncio import tqdm as atqdm
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich.pretty import Pretty
 from rich.live import Live
 from rich.spinner import Spinner
@@ -73,26 +72,35 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
 class RateLimiter:
     def __init__(self, max_calls, period):
         self.max_calls = max_calls
-        self.period = period  # period in seconds (e.g., 60 seconds)
-        self.calls = 0
-        self.reset_time = time.monotonic() + period
+        self.period = period
+        self.submission_times = []
         self.lock = asyncio.Lock()
     
     async def __aenter__(self):
         async with self.lock:
             now = time.monotonic()
-            if now >= self.reset_time:
-                # Reset the counter and window
-                self.calls = 0
-                self.reset_time = now + self.period
-            if self.calls >= self.max_calls:
-                # Delay until the start of the next period
-                sleep_time = self.reset_time - now
+            
+            # Filter out submission times older than the period
+            self.submission_times = [t for t in self.submission_times if now - t < self.period]
+            
+            # Check if we've exceeded the rate limit
+            if len(self.submission_times) >= self.max_calls:
+                # Find the oldest submission within our window
+                oldest = min(self.submission_times)
+                # Calculate when that submission will "expire" from our window
+                expire_time = oldest + self.period
+                # Sleep until we can make another call
+                sleep_time = expire_time - now
                 print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.")
                 await asyncio.sleep(sleep_time)
-                self.calls = 0
-                self.reset_time = time.monotonic() + self.period
-            self.calls += 1
+                
+                # After sleeping, recalculate the submission times list
+                now = time.monotonic()
+                self.submission_times = [t for t in self.submission_times if now - t < self.period]
+            
+            # Add the current time to our submission times
+            self.submission_times.append(now)
+        
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -100,16 +108,20 @@ class RateLimiter:
 
 
 
-async def arun_batch(prompts, max_calls=9999, period=60, show_progress=True):
+async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=True):
     results = {}
     
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
     
     async def _process_prompt(qid, prompt_fn):
+        await asyncio.sleep(np.random.exponential(delay))
         async with rate_limiter:
-            print(f"processing: {qid}")
+            print(f"preparing : {qid:03d}")
             try:
+                await asyncio.sleep(np.random.exponential(delay))
+                print(f"running   : {qid:03d}")
                 result = await prompt_fn()
+                print(f"complete  : {qid:03d}")
                 return qid, result
             except Exception as e:
                 print(f"Error processing prompt {qid}: {e}")

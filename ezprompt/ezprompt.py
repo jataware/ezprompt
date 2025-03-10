@@ -80,12 +80,16 @@ class EZPrompt:
         prompt = self.template.format(**prompt_kwargs)
         return prompt, extra_kwargs
     
-    def run(self, **inputs):
+    def run(self, _cache_idx=None, **inputs):
         prompt, extra_kwargs = self.prompt(**inputs)
 
         # Check cache
         if self.cache_dir is not None:
-            cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            if _cache_idx is None:
+                cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            else:
+                cache_key = _cache_key(self.llm_kwargs, self.system, prompt, _cache_idx)
+            
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
                 return json.loads(cache_path.read_text())
@@ -122,12 +126,16 @@ class EZPrompt:
         
         return output
 
-    async def arun(self, **inputs):
+    async def arun(self, _cache_idx=None, **inputs):
         # [TODO] very annoying that i have to repeat the whole thing? can i do a synchronous wrapper?
         prompt, extra_kwargs = self.prompt(**inputs)
 
         if self.cache_dir is not None:
-            cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            if _cache_idx is None:
+                cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
+            else:
+                cache_key = _cache_key(self.llm_kwargs, self.system, prompt, _cache_idx)
+            
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
                 return json.loads(cache_path.read_text())
