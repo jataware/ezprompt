@@ -161,6 +161,7 @@ class EZPrompt:
                 return json.loads(cache_path.read_text())
             else:
                 rprint(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
+                rprint(inputs)
         
         # Run LLM
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
