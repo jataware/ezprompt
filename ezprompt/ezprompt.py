@@ -95,10 +95,10 @@ class EZPrompt:
             
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
-                rprint(f"[green]ezprompt: Loaded from cache[/green] {cache_key}", file=sys.stderr)
+                rprint(f"[green]ezprompt {self.name}: Loaded from cache[/green] {cache_key}", file=sys.stderr)
                 return json.loads(cache_path.read_text())
             else:
-                rprint(f"[blue]ezprompt: No cache found[/blue] {cache_key}", file=sys.stderr)
+                rprint(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
         
         # Run LLM
         with utils.spinner(f"Running {self.name}"):
@@ -114,7 +114,7 @@ class EZPrompt:
         
         # [BUG] Why would this happen?
         if len(response.choices) == 0:
-            rprint(f"[red]ezprompt: No response from {self.name}[/red] {prompt}", file=sys.stderr)
+            rprint(f"[red]ezprompt {self.name}: No response[/red] {prompt}", file=sys.stderr)
             rprint(response, file=sys.stderr)
             raise Exception(f"No response from {self.name}")
         
