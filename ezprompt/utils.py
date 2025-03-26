@@ -1,15 +1,23 @@
+#!/usr/bin/env python
+"""
+    ezprompt/utils.py
+"""
+
 import sys
 import json
 import asyncio
-from pathlib import Path
 import numpy as np
+from pathlib import Path
+from pydantic import BaseModel
 from tqdm.asyncio import tqdm as atqdm
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.live import Live
 from rich.spinner import Spinner
+from rich import print as rprint
 import time
 
 def spinner(msg, spinner_type="aesthetic"):
@@ -34,6 +42,12 @@ def spinner(msg, spinner_type="aesthetic"):
     live.get_renderable = get_renderable
     
     return live
+
+class PydanticEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        return super().default(obj)
 
 def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
     
@@ -110,8 +124,33 @@ class RateLimiter:
         pass
 
 
+def retry_wrapper(fn, n_retries=0, verbose=True):
+    @retry(
+        stop=stop_after_attempt(n_retries + 1),
+        wait=wait_exponential(multiplier=2, min=1, max=4),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
+    )
+    def __retry_fn(*args, **kwargs):
+        return fn(*args, **kwargs)
+    return __retry_fn
 
-async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=True):
+
+def aretry_wrapper(fn, n_retries=0, verbose=True):
+    @retry(
+        stop=stop_after_attempt(n_retries + 1),
+        wait=wait_exponential(multiplier=2, min=1, max=4),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
+    )
+    async def __retry_fn(*args, **kwargs):
+        return await fn(*args, **kwargs)
+    return __retry_fn
+
+
+async def arun_batch(prompts, max_calls=9999, period=60, delay=0, n_retries=0, verbose=True):
     results = {}
     
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
@@ -119,21 +158,28 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, show_progress=
     async def _process_prompt(qid, prompt_fn):
         await asyncio.sleep(np.random.exponential(delay))
         async with rate_limiter:
-            print(f"preparing : {qid:03d}", file=sys.stderr)
+            if verbose:
+                print(f"preparing : {qid}", file=sys.stderr)
+            
             try:
                 await asyncio.sleep(np.random.exponential(delay))
-                print(f"running   : {qid:03d}", file=sys.stderr)
-                result = await prompt_fn()
-                print(f"complete  : {qid:03d}", file=sys.stderr)
+                
+                if verbose:
+                    print(f"running   : {qid}", file=sys.stderr)
+                
+                result = await aretry_wrapper(prompt_fn, n_retries=n_retries, verbose=verbose)()
+                
+                if verbose:
+                    print(f"complete  : {qid}", file=sys.stderr)
+                
                 return qid, result
             except Exception as e:
-                # breakpoint()
-                print(f"Error processing prompt {qid}: {e}", file=sys.stderr)
+                rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
                 return qid, None
     
     tasks = [_process_prompt(qid, prompt_fn) for qid, prompt_fn in prompts.items()]
     
-    pbar = atqdm(total=len(prompts), desc="arun_batch", disable=not show_progress)
+    pbar = atqdm(total=len(prompts), desc="arun_batch", disable=not verbose)
     for coro in asyncio.as_completed(tasks):
         qid, result = await coro
         results[qid] = result
