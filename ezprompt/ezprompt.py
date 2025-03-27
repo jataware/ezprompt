@@ -14,7 +14,6 @@ from rich import print as rprint
 
 from . import utils
 
-
 def _cache_key(*args):
     h = ''
     for x in args:
@@ -25,9 +24,26 @@ def _cache_key(*args):
     
     return md5(h.encode()).hexdigest()
 
-
 # --
 # Main
+
+class EZFuture:
+    def __init__(self, fn=None, value=None):
+        self.fn      = fn
+        self.value   = value
+        self.is_done = value is not None
+    
+    def __call__(self):
+        if self.is_done:
+            return self.value
+        
+        if self.fn is None:
+            raise Exception("EZFuture has no function to call")
+        
+        self.value   = self.fn()
+        self.is_done = True
+        return self.value
+
 
 class EZPrompt:
     LOG_DIR         = None
@@ -99,13 +115,9 @@ class EZPrompt:
         prompt = self.template.format(**prompt_kwargs)
         return prompt, extra_kwargs
     
-    def _cache_debug(self, *args, **kwargs):
-        if self.cache_debug:
-            rprint(*args, **kwargs)
-    
-    def run(self, _cache_idx=None, _cache_only=False, **inputs):
+    def try_cache(self, _cache_idx=None, _cache_only=False, **inputs):
         # Format prompt
-        prompt, extra_kwargs = self.prompt(**inputs)
+        prompt, _ = self.prompt(**inputs)
         
         # Read cache (?)
         if self.cache_dir is not None:
@@ -117,12 +129,26 @@ class EZPrompt:
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
                 self._cache_debug(f"[green]ezprompt {self.name}: Loaded from cache[/green] {cache_key}", file=sys.stderr)
-                return json.loads(cache_path.read_text())
+                return cache_key, json.loads(cache_path.read_text())
             else:
                 self._cache_debug(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
                 if _cache_only:
                     raise Exception(f"No cache found for {self.name} {cache_key}")
-
+        
+        return cache_key, None
+    
+    def _cache_debug(self, *args, **kwargs):
+        if self.cache_debug:
+            rprint(*args, **kwargs)
+    
+    def run(self, _cache_idx=None, _cache_only=False, **inputs):
+        # Format prompt
+        prompt, extra_kwargs = self.prompt(**inputs)
+        
+        # Try cache
+        cache_key, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
+        if cached_output is not None:
+            return cached_output
         
         # Run LLM
         with utils.spinner(f"Running {self.name}"):
@@ -156,10 +182,8 @@ class EZPrompt:
         
         # Validation
         if self.validate is not None:
-            print(f"Validating {self.name}", file=sys.stderr)
             try:
                 _ = self.validate(**output)
-                print(f"Validation passed for {self.name}", file=sys.stderr)
             except Exception as e:
                 rprint(f"[red]ezprompt {self.name}: Validation error[/red] {e}", file=sys.stderr)
                 rprint(output, file=sys.stderr)
@@ -183,22 +207,10 @@ class EZPrompt:
         # Format prompt
         prompt, extra_kwargs = self.prompt(**inputs)
         
-        # Read cache (?)
-        if self.cache_dir is not None:
-            if _cache_idx is None:
-                cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
-            else:
-                cache_key = _cache_key(self.llm_kwargs, self.system, prompt, _cache_idx)
-            
-            cache_path = Path(self.cache_dir) / f"{cache_key}.json"
-            if cache_path.exists():
-                self._cache_debug(f"[green]ezprompt {self.name}: Loaded from cache[/green] {cache_key}", file=sys.stderr)
-                return json.loads(cache_path.read_text())
-            else:
-                self._cache_debug(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
-                # self._cache_debug(inputs)
-                if _cache_only:
-                    raise Exception(f"No cache found for {self.name} {cache_key}")
+        # Try cache
+        cache_key, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
+        if cached_output is not None:
+            return cached_output
         
         # Run LLM
         # vvvvvv ONLY DIFFERENCE FROM SYNC VERSION vvvvvv
@@ -233,10 +245,8 @@ class EZPrompt:
         
         # Validation
         if self.validate is not None:
-            print(f"Validating {self.name}", file=sys.stderr)
             try:
                 _ = self.validate(**output)
-                print(f"Validation passed for {self.name}", file=sys.stderr)
             except Exception as e:
                 rprint(f"[red]ezprompt {self.name}: Validation error[/red] {e}", file=sys.stderr)
                 rprint(output, file=sys.stderr)
@@ -256,9 +266,11 @@ class EZPrompt:
                 
         return output
     
-    def larun(self, **inputs):
-        def _fn():
-            return self.arun(**inputs)
+    def larun(self, _cache_idx=None, _cache_only=False, **inputs):
+        _, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
         
-        return _fn
+        if cached_output is not None:
+            return EZFuture(value=cached_output)
+        else:
+            return EZFuture(fn=lambda: self.arun(_cache_idx=_cache_idx, _cache_only=_cache_only, **inputs))
 

@@ -100,14 +100,11 @@ class RateLimiter:
             # Filter out submission times older than the period
             self.submission_times = [t for t in self.submission_times if now - t < self.period]
             
-            # Check if we've exceeded the rate limit
             if len(self.submission_times) >= self.max_calls:
-                # Find the oldest submission within our window
-                oldest = min(self.submission_times)
-                # Calculate when that submission will "expire" from our window
-                expire_time = oldest + self.period
-                # Sleep until we can make another call
-                sleep_time = expire_time - now
+                print(self.submission_times)
+                oldest       = min(self.submission_times)
+                expire_time  = oldest + self.period
+                sleep_time   = expire_time - now
                 print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.", file=sys.stderr)
                 await asyncio.sleep(sleep_time)
                 
@@ -150,12 +147,15 @@ def aretry_wrapper(fn, n_retries=0, verbose=True):
     return __retry_fn
 
 
-async def arun_batch(prompts, max_calls=9999, period=60, delay=0, n_retries=0, verbose=True):
+async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=3, verbose=True):
     results = {}
     
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
     
-    async def _process_prompt(qid, prompt_fn):
+    async def _process_prompt(qid, future):
+        if future.is_done:
+            return qid, future.value
+        
         await asyncio.sleep(np.random.exponential(delay))
         async with rate_limiter:
             if verbose:
@@ -167,7 +167,7 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, n_retries=0, v
                 if verbose:
                     print(f"running   : {qid}", file=sys.stderr)
                 
-                result = await aretry_wrapper(prompt_fn, n_retries=n_retries, verbose=verbose)()
+                result = await aretry_wrapper(future, n_retries=n_retries, verbose=verbose)()
                 
                 if verbose:
                     print(f"complete  : {qid}", file=sys.stderr)
@@ -177,16 +177,16 @@ async def arun_batch(prompts, max_calls=9999, period=60, delay=0, n_retries=0, v
                 rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
                 return qid, None
     
-    tasks = [_process_prompt(qid, prompt_fn) for qid, prompt_fn in prompts.items()]
+    tasks = [_process_prompt(qid, future) for qid, future in futures.items()]
     
-    pbar = atqdm(total=len(prompts), desc="arun_batch", disable=not verbose)
+    pbar = atqdm(total=len(futures), desc="arun_batch", disable=not verbose)
     for coro in asyncio.as_completed(tasks):
         qid, result = await coro
         results[qid] = result
         pbar.update(1)
     
     pbar.close()
-    return {qid: results[qid] for qid in prompts.keys()}
+    return {qid: results[qid] for qid in futures.keys()}
 
 
 def run_batch(*args, **kwargs):
