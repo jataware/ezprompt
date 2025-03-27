@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from typing import Optional, Callable
 from litellm import completion, acompletion
 from rich import print as rprint
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from . import utils
 
@@ -25,25 +26,42 @@ def _cache_key(*args):
     return md5(h.encode()).hexdigest()
 
 # --
-# Main
+# Futures
+
+def aretry_wrapper(fn, n_retries=0, verbose=True):
+    @retry(
+        stop=stop_after_attempt(n_retries + 1),
+        wait=wait_exponential(multiplier=2, min=1, max=4),
+        retry=retry_if_exception_type(Exception),
+        reraise=True,
+        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
+    )
+    async def __retry_fn(*args, **kwargs):
+        return await fn(*args, **kwargs)
+    return __retry_fn
+
 
 class EZFuture:
-    def __init__(self, fn=None, value=None):
-        self.fn      = fn
-        self.value   = value
-        self.is_done = value is not None
+    def __init__(self, fn=None, value=None, n_retries=3, verbose=True):
+        self.fn        = fn
+        self.value     = value
+        self.is_done   = value is not None
+        self.n_retries = n_retries
+        self.verbose   = verbose
     
-    def __call__(self):
+    async def __call__(self):
         if self.is_done:
             return self.value
         
         if self.fn is None:
             raise Exception("EZFuture has no function to call")
         
-        self.value   = self.fn()
+        self.value   = await aretry_wrapper(self.fn, n_retries=self.n_retries, verbose=self.verbose)()
         self.is_done = True
         return self.value
 
+# --
+# Main
 
 class EZPrompt:
     LOG_DIR         = None
@@ -128,25 +146,25 @@ class EZPrompt:
             
             cache_path = Path(self.cache_dir) / f"{cache_key}.json"
             if cache_path.exists():
-                self._cache_debug(f"[green]ezprompt {self.name}: Loaded from cache[/green] {cache_key}", file=sys.stderr)
+                if self.cache_debug:
+                    rprint(f"[green]ezprompt {self.name}: Loaded from cache[/green] {cache_key}", file=sys.stderr)
+                
                 return cache_key, json.loads(cache_path.read_text())
             else:
-                self._cache_debug(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
+                if self.cache_debug:
+                    rprint(f"[blue]ezprompt {self.name}: No cache found[/blue] {cache_key}", file=sys.stderr)
+                
                 if _cache_only:
                     raise Exception(f"No cache found for {self.name} {cache_key}")
         
         return cache_key, None
-    
-    def _cache_debug(self, *args, **kwargs):
-        if self.cache_debug:
-            rprint(*args, **kwargs)
     
     def run(self, _cache_idx=None, _cache_only=False, **inputs):
         # Format prompt
         prompt, extra_kwargs = self.prompt(**inputs)
         
         # Try cache
-        cache_key, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
+        cache_key, cached_output = self.try_cache(_cache_idx=_cache_idx, _cache_only=_cache_only, **inputs)
         if cached_output is not None:
             return cached_output
         
@@ -208,7 +226,7 @@ class EZPrompt:
         prompt, extra_kwargs = self.prompt(**inputs)
         
         # Try cache
-        cache_key, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
+        cache_key, cached_output = self.try_cache(_cache_idx=_cache_idx, _cache_only=_cache_only, **inputs)
         if cached_output is not None:
             return cached_output
         
@@ -268,9 +286,11 @@ class EZPrompt:
     
     def larun(self, _cache_idx=None, _cache_only=False, **inputs):
         _, cached_output = self.try_cache(_cache_idx, _cache_only, **inputs)
-        
         if cached_output is not None:
             return EZFuture(value=cached_output)
         else:
-            return EZFuture(fn=lambda: self.arun(_cache_idx=_cache_idx, _cache_only=_cache_only, **inputs))
+            async def _fn():
+                return await self.arun(_cache_idx=_cache_idx, _cache_only=_cache_only, **inputs)
+            
+            return EZFuture(fn=_fn)
 

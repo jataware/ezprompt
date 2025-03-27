@@ -10,7 +10,6 @@ import numpy as np
 from pathlib import Path
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm as atqdm
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from rich.console import Console
 from rich.panel import Panel
@@ -101,7 +100,7 @@ class RateLimiter:
             self.submission_times = [t for t in self.submission_times if now - t < self.period]
             
             if len(self.submission_times) >= self.max_calls:
-                print(self.submission_times)
+                print([now - t for t in self.submission_times])
                 oldest       = min(self.submission_times)
                 expire_time  = oldest + self.period
                 sleep_time   = expire_time - now
@@ -121,33 +120,9 @@ class RateLimiter:
         pass
 
 
-def retry_wrapper(fn, n_retries=0, verbose=True):
-    @retry(
-        stop=stop_after_attempt(n_retries + 1),
-        wait=wait_exponential(multiplier=2, min=1, max=4),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
-    )
-    def __retry_fn(*args, **kwargs):
-        return fn(*args, **kwargs)
-    return __retry_fn
 
 
-def aretry_wrapper(fn, n_retries=0, verbose=True):
-    @retry(
-        stop=stop_after_attempt(n_retries + 1),
-        wait=wait_exponential(multiplier=2, min=1, max=4),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
-    )
-    async def __retry_fn(*args, **kwargs):
-        return await fn(*args, **kwargs)
-    return __retry_fn
-
-
-async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=3, verbose=True):
+async def arun_batch(futures, max_calls=9999, period=60, delay=0, verbose=True):
     results = {}
     
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
@@ -167,7 +142,7 @@ async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=3, v
                 if verbose:
                     print(f"running   : {qid}", file=sys.stderr)
                 
-                result = await aretry_wrapper(future, n_retries=n_retries, verbose=verbose)()
+                result = await future()
                 
                 if verbose:
                     print(f"complete  : {qid}", file=sys.stderr)
