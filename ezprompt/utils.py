@@ -8,7 +8,7 @@ import json
 import asyncio
 import numpy as np
 from pathlib import Path
-from pydantic import BaseModel
+from json_repair import repair_json
 from tqdm.asyncio import tqdm as atqdm
 
 from rich.console import Console
@@ -18,6 +18,28 @@ from rich.live import Live
 from rich.spinner import Spinner
 from rich import print as rprint
 import time
+
+# --
+# ETL
+
+def json_loads_robust(json_str):
+    data = json_str.split('```')[-2]
+    if data.startswith('json'):
+        data = data[len('json'):]
+    
+    try:
+        return json.loads(data)
+    except Exception as e:
+        try:
+            rprint(f"[yellow]Error parsing JSON ... attempting repair [/yellow]", file=sys.stderr)
+            return json.loads(repair_json(data))
+        except Exception as e:
+            rprint(f"[red]Error parsing JSON ... attempting repair [/red]", file=sys.stderr)
+            print(data, file=sys.stderr)
+            raise e
+
+# --
+# Logging
 
 def spinner(msg, spinner_type="aesthetic"):
     start_time = time.time()
@@ -41,12 +63,6 @@ def spinner(msg, spinner_type="aesthetic"):
     live.get_renderable = get_renderable
     
     return live
-
-class PydanticEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, BaseModel):
-            return obj.model_dump()
-        return super().default(obj)
 
 def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
     
@@ -84,6 +100,7 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
 
 
 # --
+# API calls
 
 class RateLimiter:
     def __init__(self, max_calls, period):
@@ -118,8 +135,6 @@ class RateLimiter:
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
-
-
 
 
 async def arun_batch(futures, max_calls=9999, period=60, delay=0, verbose=True):
