@@ -20,5 +20,7 @@ setup(
         "pydantic",
         "rich",
         "tqdm",
+        "tenacity",
+        "json_repair"
     ],
 )
