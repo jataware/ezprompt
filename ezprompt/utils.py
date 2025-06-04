@@ -182,7 +182,7 @@ class RateLimiter:
         pass
 
 
-async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=1):
+async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=3):
     logger       = BatchLogger()
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
     

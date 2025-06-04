@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from typing import Optional, Callable
 from litellm import completion, acompletion
 from rich import print as rprint
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_any, stop_after_attempt, stop_after_delay, wait_exponential, retry_if_exception_type
 
 from . import utils
 
@@ -33,7 +33,7 @@ def _cache_key(*args):
 
 def aretry_wrapper(fn, n_retries, verbose):
     @retry(
-        stop         = stop_after_attempt(n_retries + 1),
+        stop         = stop_any(stop_after_attempt(n_retries + 1), stop_after_delay(60)),
         wait         = wait_exponential(multiplier=2, min=1, max=16),
         retry        = retry_if_exception_type(Exception),
         reraise      = True,
