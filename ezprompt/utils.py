@@ -151,21 +151,21 @@ async def arun_batch(futures, max_calls=9999, period=60, delay=0, verbose=True):
             if verbose:
                 print(f"preparing : {qid}", file=sys.stderr)
             
-            try:
-                await asyncio.sleep(np.random.exponential(delay))
-                
-                if verbose:
-                    print(f"running   : {qid}", file=sys.stderr)
-                
-                result = await future()
-                
-                if verbose:
-                    print(f"complete  : {qid}", file=sys.stderr)
-                
-                return qid, result
-            except Exception as e:
-                rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
-                return qid, None
+            # try:
+            await asyncio.sleep(np.random.exponential(delay))
+            
+            if verbose:
+                print(f"running   : {qid}", file=sys.stderr)
+            
+            result = await future()
+            
+            if verbose:
+                print(f"complete  : {qid}", file=sys.stderr)
+            
+            return qid, result
+            # except Exception as e:
+            #     rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
+            #     return qid, None
     
     tasks = [_process_prompt(qid, future) for qid, future in futures.items()]
     

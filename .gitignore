@@ -2,3 +2,6 @@ ezprompt.egg-info/*
 *ezlogs*
 *__pycache__*
 *.DS_Store
+# pixi environments
+.pixi
+*.egg-info

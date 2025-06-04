@@ -34,7 +34,7 @@ def aretry_wrapper(fn, n_retries=0, verbose=True):
         wait=wait_exponential(multiplier=2, min=1, max=4),
         retry=retry_if_exception_type(Exception),
         reraise=True,
-        before_sleep=lambda retry_state: print(f"Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
+        before_sleep=lambda retry_state: print(f"aretry_wrapper: Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
     )
     async def __retry_fn(*args, **kwargs):
         return await fn(*args, **kwargs)
@@ -138,6 +138,7 @@ class EZPrompt:
         prompt, _ = self.prompt(**inputs)
         
         # Read cache (?)
+        cache_key = None
         if self.cache_dir is not None:
             if _cache_idx is None:
                 cache_key = _cache_key(self.llm_kwargs, self.system, prompt)
