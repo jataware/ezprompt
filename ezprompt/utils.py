@@ -3,6 +3,9 @@
     ezprompt/utils.py
 """
 
+import litellm
+litellm.suppress_debug_info = True
+
 import sys
 import json
 import asyncio
@@ -16,8 +19,9 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.live import Live
 from rich.spinner import Spinner
+from rich.table import Table
 from rich import print as rprint
-import time
+from time import time, monotonic
 
 # --
 # ETL
@@ -42,11 +46,11 @@ def json_loads_robust(json_str):
 # Logging
 
 def spinner(msg, spinner_type="aesthetic"):
-    start_time = time.time()
+    start_time = time()
     console = Console()
     
     def get_spinner_text():
-        elapsed = int(time.time() - start_time)
+        elapsed = int(time() - start_time)
         return f"{msg} (elapsed: {elapsed}s)"
     
     spinner_obj = Spinner(spinner_type, text=get_spinner_text())
@@ -102,6 +106,48 @@ def log(LOG_DIR, name, counter, prompt, output_str, output, show_console=True):
 # --
 # API calls
 
+class BatchLogger:
+    STATE_CHOICES = ['waiting', 'preparing', 'running', 'complete', 'error']
+    def __init__(self):
+        self.status     = {}
+        self.console    = Console()
+        self.live       = None
+        self.start_time = time()
+    
+    def update(self, qid, state):
+        assert state in self.STATE_CHOICES, f"Invalid state: {state}"
+        self.status[qid] = state
+
+        if not self.live:
+            self.live = Live(self._generate_table(), console=self.console, refresh_per_second=4, auto_refresh=True)
+            self.live.start()
+        else:
+            self.live.update(self._generate_table())
+
+        
+    def _generate_table(self):
+        cnts = {state: 0 for state in self.STATE_CHOICES}
+        
+        for state in self.status.values():
+            cnts[state] += 1
+        
+        # Create a table with all counts in a single row
+        table = Table(expand=True)
+        
+        # Add columns for each state
+        table.add_column("elapsed", justify="center")
+        for state in self.STATE_CHOICES:
+            table.add_column(f"{state}", justify="center")
+        
+        # # Add the counts as a single row
+        table.add_row(f"{time() - self.start_time:0.3f}s", *[f"{cnts[state]}" for state in self.STATE_CHOICES], style="white")
+
+        return table
+
+    def __del__(self):
+        if self.live:
+            self.live.stop()
+
 class RateLimiter:
     def __init__(self, max_calls, period):
         self.max_calls = max_calls
@@ -111,21 +157,20 @@ class RateLimiter:
     
     async def __aenter__(self):
         async with self.lock:
-            now = time.monotonic()
+            now = monotonic()
             
             # Filter out submission times older than the period
             self.submission_times = [t for t in self.submission_times if now - t < self.period]
             
             if len(self.submission_times) >= self.max_calls:
-                print([now - t for t in self.submission_times])
                 oldest       = min(self.submission_times)
                 expire_time  = oldest + self.period
                 sleep_time   = expire_time - now
-                print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.", file=sys.stderr)
+                # print(f"Submission limit reached. Waiting {sleep_time:.2f} seconds before submitting the next request.", file=sys.stderr)
                 await asyncio.sleep(sleep_time)
                 
                 # After sleeping, recalculate the submission times list
-                now = time.monotonic()
+                now = monotonic()
                 self.submission_times = [t for t in self.submission_times if now - t < self.period]
             
             # Add the current time to our submission times
@@ -137,45 +182,51 @@ class RateLimiter:
         pass
 
 
-async def arun_batch(futures, max_calls=9999, period=60, delay=0, verbose=True):
-    results = {}
-    
+async def arun_batch(futures, max_calls=9999, period=60, delay=0, n_retries=1):
+    logger       = BatchLogger()
     rate_limiter = RateLimiter(max_calls=max_calls, period=period)
     
     async def _process_prompt(qid, future):
         if future.is_done:
-            return qid, future.value
-        
+            logger.update(qid, 'complete')
+            return qid, future.value, None
+
+        logger.update(qid, 'waiting')
+
         await asyncio.sleep(np.random.exponential(delay))
         async with rate_limiter:
-            if verbose:
-                print(f"preparing : {qid}", file=sys.stderr)
+            logger.update(qid, 'preparing')
             
-            # try:
-            await asyncio.sleep(np.random.exponential(delay))
-            
-            if verbose:
-                print(f"running   : {qid}", file=sys.stderr)
-            
-            result = await future()
-            
-            if verbose:
-                print(f"complete  : {qid}", file=sys.stderr)
-            
-            return qid, result
-            # except Exception as e:
-            #     rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
-            #     return qid, None
+            try:
+                await asyncio.sleep(np.random.exponential(delay))
+                
+                logger.update(qid, 'running')
+                result = await future()
+                logger.update(qid, 'complete')
+                
+                return qid, result, None
+            except Exception as e:
+                # rprint(f"[red]Error processing prompt {qid}[/red]: {e}", file=sys.stderr)
+                logger.update(qid, 'error')
+                return qid, None, e
     
     tasks = [_process_prompt(qid, future) for qid, future in futures.items()]
     
-    pbar = atqdm(total=len(futures), desc="arun_batch", disable=not verbose)
+    results = {}
+    retries = {}
     for coro in asyncio.as_completed(tasks):
-        qid, result = await coro
-        results[qid] = result
-        pbar.update(1)
+        qid, result, error = await coro
+        if error is None:
+            results[qid] = result
+        else:
+            retries[qid] = futures[qid]
     
-    pbar.close()
+    del logger
+
+    if len(retries) > 0:
+        rprint(f"[yellow]Retrying {len(retries)} failed prompts[/yellow]", file=sys.stderr)
+        results.update(await arun_batch(retries, max_calls=max_calls, period=period, delay=delay, n_retries=n_retries - 1))
+
     return {qid: results[qid] for qid in futures.keys()}
 
 

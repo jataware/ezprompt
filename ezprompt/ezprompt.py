@@ -3,6 +3,9 @@
     ezprompt.py
 """
 
+import litellm
+litellm.suppress_debug_info = True
+
 import sys
 import json
 from hashlib import md5
@@ -28,13 +31,13 @@ def _cache_key(*args):
 # --
 # Futures
 
-def aretry_wrapper(fn, n_retries=0, verbose=True):
+def aretry_wrapper(fn, n_retries, verbose):
     @retry(
-        stop=stop_after_attempt(n_retries + 1),
-        wait=wait_exponential(multiplier=2, min=1, max=4),
-        retry=retry_if_exception_type(Exception),
-        reraise=True,
-        before_sleep=lambda retry_state: print(f"aretry_wrapper: Retry {retry_state.attempt_number}/{n_retries}", file=sys.stderr) if verbose else None
+        stop         = stop_after_attempt(n_retries + 1),
+        wait         = wait_exponential(multiplier=2, min=1, max=16),
+        retry        = retry_if_exception_type(Exception),
+        reraise      = True,
+        before_sleep = lambda retry_state: rprint(f"[yellow]aretry_wrapper: Retry {retry_state.attempt_number}/{n_retries}[/yellow]", file=sys.stderr) if verbose else None
     )
     async def __retry_fn(*args, **kwargs):
         return await fn(*args, **kwargs)
@@ -42,7 +45,7 @@ def aretry_wrapper(fn, n_retries=0, verbose=True):
 
 
 class EZFuture:
-    def __init__(self, fn=None, value=None, n_retries=3, verbose=True):
+    def __init__(self, fn=None, value=None, n_retries=5, verbose=False):
         self.fn        = fn
         self.value     = value
         self.is_done   = value is not None
